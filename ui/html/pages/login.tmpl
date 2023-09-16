@@ -1,0 +1,25 @@
+{{ define "title" }}Login{{ end }}
+{{ define "main" }}
+<form action="/user/login" method="POST">
+    {{ range .Form.NonFieldErrors }}
+    <div class="error">{{.}}</div>
+    {{ end }}
+    <div>
+        <label for="login-email">Email:</label>
+        {{ with .Form.FieldErrors.email }}
+        <label for="login-email" class="error">{{.}}</label>
+        {{ end }}
+        <input type="email" name="email" id="login-email" value="{{.Form.Email}}">
+    </div>
+    <div>
+        <label for="login-password">Password:</label>
+        {{ with .Form.FieldErrors.password }}
+        <label for="login-password" class="error">{{.}}</label>
+        {{ end }}
+        <input type="password" name="password" id="login-password">
+    </div>
+    <div>
+        <input type="submit" value="Login">
+    </div>
+</form>
+{{ end }}

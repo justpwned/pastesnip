@@ -1,12 +1,17 @@
 package main
 
 import (
+	"crypto/tls"
 	"database/sql"
 	"flag"
 	"log"
 	"net/http"
 	"os"
+	"time"
 
+	"github.com/alexedwards/scs/mysqlstore"
+	"github.com/alexedwards/scs/v2"
+	"github.com/go-playground/form/v4"
 	_ "github.com/go-sql-driver/mysql"
 	"github.com/justpwned/pastesnip/internal/models"
 )
@@ -17,10 +22,14 @@ type config struct {
 }
 
 type application struct {
-	errorLog *log.Logger
-	infoLog  *log.Logger
-	config   *config
-	snippets *models.SnippetModel
+	errorLog       *log.Logger
+	infoLog        *log.Logger
+	config         *config
+	snippets       *models.SnippetModel
+	users          *models.UserModel
+	templateCache  templateCache
+	formDecoder    *form.Decoder
+	sessionManager *scs.SessionManager
 }
 
 func main() {
@@ -39,21 +48,44 @@ func main() {
 	}
 	defer db.Close()
 
+	templCache, err := newTemplateCache()
+	if err != nil {
+		errorLog.Fatal(err)
+	}
+
+	formDecoder := form.NewDecoder()
+
+	sessionManager := scs.New()
+	sessionManager.Store = mysqlstore.New(db)
+	sessionManager.Lifetime = 12 * time.Hour
+
 	app := application{
-		errorLog: errorLog,
-		infoLog:  infoLog,
-		config:   &config,
-		snippets: &models.SnippetModel{DB: db},
+		errorLog:       errorLog,
+		infoLog:        infoLog,
+		config:         &config,
+		snippets:       &models.SnippetModel{DB: db},
+		users:          &models.UserModel{DB: db},
+		templateCache:  templCache,
+		formDecoder:    formDecoder,
+		sessionManager: sessionManager,
+	}
+
+	tlsConfig := tls.Config{
+		CurvePreferences: []tls.CurveID{tls.X25519, tls.CurveP256},
 	}
 
 	server := http.Server{
-		Addr:     config.addr,
-		ErrorLog: errorLog,
-		Handler:  app.routes(),
+		Addr:         config.addr,
+		ErrorLog:     errorLog,
+		Handler:      app.routes(),
+		TLSConfig:    &tlsConfig,
+		IdleTimeout:  time.Minute,
+		ReadTimeout:  5 * time.Second,
+		WriteTimeout: 10 * time.Second,
 	}
 
 	infoLog.Printf("Starting server on %s", config.addr)
-	errorLog.Fatal(server.ListenAndServe())
+	errorLog.Fatal(server.ListenAndServeTLS("./tls/cert.pem", "./tls/key.pem"))
 }
 
 func openDB(dsn string) (*sql.DB, error) {
